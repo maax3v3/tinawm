@@ -481,9 +481,16 @@ static void draw_titlebar(Client *c, bool focused)
 	xcb_change_gc(conn, c->gc, XCB_GC_FOREGROUND, &fg);
 
 	int len = strlen(c->title);
-	if (len > 0)
-		xcb_image_text_8(conn, len, c->frame, c->gc,
-			4, TITLEBAR_HEIGHT - 4, c->title);
+	if (len > 0) {
+		if (len > 255)
+			len = 255;
+		uint8_t item[257];
+		item[0] = (uint8_t)len;
+		item[1] = 0; /* delta */
+		memcpy(&item[2], c->title, (size_t)len);
+		xcb_poly_text_8(conn, c->frame, c->gc, 4, TITLEBAR_HEIGHT - 4,
+			2 + len, item);
+	}
 }
 
 static void frame_client(Client *c)
