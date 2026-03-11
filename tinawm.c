@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
+#include <sys/select.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
@@ -859,8 +861,11 @@ static void handle_property_notify(xcb_property_notify_event_t *ev)
 
 static void run(void)
 {
-	xcb_generic_event_t *ev;
-	while (running && (ev = xcb_wait_for_event(conn))) {
+	time_t next_bar_tick = time(NULL) + 10;
+
+	while (running) {
+		xcb_generic_event_t *ev = NULL;
+		while ((ev = xcb_poll_for_event(conn)) != NULL) {
 		switch (ev->response_type & ~0x80) {
 		case XCB_MAP_REQUEST:
 			handle_map_request((xcb_map_request_event_t *)ev);
@@ -896,6 +901,26 @@ static void run(void)
 			break;
 		}
 		free(ev);
+	}
+
+		time_t now = time(NULL);
+		if (now >= next_bar_tick) {
+			bar_tick(conn, now);
+			next_bar_tick = now + 10;
+		}
+
+		int fd = xcb_get_file_descriptor(conn);
+		struct timeval tv;
+		time_t rem = next_bar_tick - now;
+		if (rem < 0)
+			rem = 0;
+		tv.tv_sec = (long)rem;
+		tv.tv_usec = 0;
+
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+		(void)select(fd + 1, &rfds, NULL, NULL, &tv);
 	}
 }
 
