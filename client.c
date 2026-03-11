@@ -13,8 +13,16 @@ Client *client_create(xcb_window_t win)
 
 void client_list_add(Client **list, Client *c)
 {
-	c->next = *list;
-	*list = c;
+	c->next = NULL;
+	if (!*list) {
+		*list = c;
+		return;
+	}
+
+	Client *tail = *list;
+	while (tail->next)
+		tail = tail->next;
+	tail->next = c;
 }
 
 void client_list_remove(Client **list, xcb_window_t win)
