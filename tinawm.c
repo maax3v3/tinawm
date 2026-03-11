@@ -107,6 +107,28 @@ static void relayout_all(void)
 		relayout_monitor(m);
 }
 
+static Monitor *monitor_from_pointer(void)
+{
+	xcb_query_pointer_cookie_t qc = xcb_query_pointer(conn, root);
+	xcb_query_pointer_reply_t *qr = xcb_query_pointer_reply(conn, qc, NULL);
+	if (!qr)
+		return monitor_get_focused();
+
+	Monitor *m = monitor_at(qr->root_x, qr->root_y);
+	free(qr);
+	return m;
+}
+
+static void sync_focused_monitor_from_pointer(void)
+{
+	Monitor *cur = monitor_get_focused();
+	Monitor *m = monitor_from_pointer();
+	if (!m || m == cur)
+		return;
+	monitor_focus(m);
+	bar_draw_all(conn);
+}
+
 static void monitor_set_focused_client(Monitor *m, Client *target)
 {
 	if (!m || !target)
@@ -388,6 +410,34 @@ void wm_focus_monitor(int num)
 	Monitor *m = monitor_get_by_num(num);
 	if (!m) return;
 	monitor_focus(m);
+
+	xcb_query_pointer_cookie_t pc = xcb_query_pointer(conn, root);
+	xcb_query_pointer_reply_t *pr = xcb_query_pointer_reply(conn, pc, NULL);
+	if (pr) {
+		Monitor *src = monitor_at(pr->root_x, pr->root_y);
+		int tx;
+		int ty;
+
+		if (src && src->w > 0 && src->h > 0) {
+			int rel_x = pr->root_x - src->x;
+			int rel_y = pr->root_y - src->y;
+			tx = m->x + (int)((long long)rel_x * m->w / src->w);
+			ty = m->y + (int)((long long)rel_y * m->h / src->h);
+		} else {
+			tx = m->x + (int)m->w / 2;
+			ty = m->y + (int)m->h / 2;
+		}
+
+		if (tx < m->x) tx = m->x;
+		if (ty < m->y) ty = m->y;
+		if (tx >= m->x + m->w) tx = m->x + m->w - 1;
+		if (ty >= m->y + m->h) ty = m->y + m->h - 1;
+
+		xcb_warp_pointer(conn, XCB_NONE, root, 0, 0, 0, 0,
+			(int16_t)tx, (int16_t)ty);
+		free(pr);
+	}
+
 	/* Keep selected client index on target monitor when possible. */
 	Client *c = monitor_client_at(m, m->focused_idx);
 	if (!c)
@@ -665,6 +715,7 @@ static void handle_map_request(xcb_map_request_event_t *ev)
 	c->mapped = true;
 
 	/* Add to focused monitor */
+	sync_focused_monitor_from_pointer();
 	Monitor *m = monitor_get_focused();
 	client_list_add(&m->clients, c);
 
@@ -755,6 +806,23 @@ static void handle_enter_notify(xcb_enter_notify_event_t *ev)
 	xcb_flush(conn);
 }
 
+static void handle_motion_notify(xcb_motion_notify_event_t *ev)
+{
+	if (launcher_visible)
+		return;
+	if (ev->event != root)
+		return;
+
+	Monitor *cur = monitor_get_focused();
+	Monitor *m = monitor_at(ev->root_x, ev->root_y);
+	if (!m || m == cur)
+		return;
+
+	monitor_focus(m);
+	bar_draw_all(conn);
+	xcb_flush(conn);
+}
+
 static void handle_expose(xcb_expose_event_t *ev)
 {
 	if (ev->count != 0)
@@ -809,6 +877,9 @@ static void run(void)
 		case XCB_ENTER_NOTIFY:
 			handle_enter_notify((xcb_enter_notify_event_t *)ev);
 			break;
+		case XCB_MOTION_NOTIFY:
+			handle_motion_notify((xcb_motion_notify_event_t *)ev);
+			break;
 		case XCB_EXPOSE:
 			handle_expose((xcb_expose_event_t *)ev);
 			break;
@@ -841,6 +912,7 @@ static void setup(void)
 	                XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
 	                XCB_EVENT_MASK_STRUCTURE_NOTIFY |
 	                XCB_EVENT_MASK_ENTER_WINDOW |
+	                XCB_EVENT_MASK_POINTER_MOTION |
 	                XCB_EVENT_MASK_PROPERTY_CHANGE;
 	xcb_void_cookie_t cookie = xcb_change_window_attributes_checked(conn,
 		root, XCB_CW_EVENT_MASK, &mask);

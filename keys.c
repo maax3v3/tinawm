@@ -142,11 +142,12 @@ void keys_init(xcb_connection_t *conn, xcb_window_t root)
 
 void keys_handle(xcb_connection_t *conn __attribute__((unused)), xcb_key_press_event_t *ev)
 {
-	xcb_keysym_t sym = xcb_key_symbols_get_keysym(keysyms, ev->detail, 0);
+	xcb_keysym_t sym0 = xcb_key_symbols_get_keysym(keysyms, ev->detail, 0);
+	xcb_keysym_t sym1 = xcb_key_symbols_get_keysym(keysyms, ev->detail, 1);
 	unsigned int state = CLEANMASK(ev->state);
 
 	for (size_t i = 0; i < KEYBIND_COUNT; i++) {
-		if (keybinds[i].keysym == sym &&
+		if ((keybinds[i].keysym == sym0 || keybinds[i].keysym == sym1) &&
 		    CLEANMASK(keybinds[i].mod) == state) {
 			keybinds[i].func();
 			return;
