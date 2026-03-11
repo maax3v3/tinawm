@@ -54,7 +54,11 @@ static void detect_numlock(xcb_connection_t *conn)
 
 static void key_spawn_terminal(void)
 {
-	spawn(TERMINAL);
+	const char *term = getenv("TERMINAL");
+	if (term && term[0] != '\0')
+		spawn(term);
+	else
+		spawn("xterm");
 }
 
 /* Defined in tinawm.c */
